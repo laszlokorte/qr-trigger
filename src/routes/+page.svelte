@@ -299,7 +299,11 @@
 		if (!url) return;
 
 		// Foreground/background behavior is controlled by the browser.
-		window.open(url, '_blank', 'noopener,noreferrer');
+		if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+			window.location.href = url;
+		} else {
+			window.open(url, '_blank', 'noopener,noreferrer');
+		}
 	}
 
 	async function requestInBackground(entry) {
@@ -416,35 +420,38 @@
 		cameraError = '';
 
 		try {
-			if (!navigator.mediaDevices?.getUserMedia) {
-				throw new Error('Camera access requires HTTPS or localhost.');
-			}
-
-			const newStream = await navigator.mediaDevices.getUserMedia({
-				audio: false,
+			stream = await navigator.mediaDevices.getUserMedia({
 				video: {
 					facingMode: { ideal: 'environment' },
 					width: { ideal: 1280 },
 					height: { ideal: 720 }
-				}
+				},
+				audio: false
 			});
 
-			// A camera request might complete after the component unmounts.
-			if (!video) {
-				newStream.getTracks().forEach((track) => track.stop());
-				return;
-			}
+			const track = stream.getVideoTracks()[0];
 
-			stream = newStream;
+			track.addEventListener('ended', () => {
+				stopCamera();
+			});
+
 			video.srcObject = stream;
+			video.muted = true;
+			video.playsInline = true;
+
 			await video.play();
+
+			window.clearInterval(scanTimer);
+			scanTimer = window.setInterval(scanFrame, 500);
+
 			scanning = true;
 		} catch (error) {
-			cameraError =
-				error.name === 'NotAllowedError'
-					? 'Camera access denied. Allow camera access in your browser settings.'
-					: `Could not start camera: ${error.message}`;
-			stopCamera();
+			stream?.getTracks().forEach((track) => track.stop());
+			stream = null;
+
+			cameraError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+
+			console.error('Could not start camera:', error);
 		}
 	}
 
@@ -453,6 +460,8 @@
 			stream.getTracks().forEach((track) => track.stop());
 			stream = null;
 		}
+
+		window.clearInterval(scanTimer);
 
 		if (video) video.srcObject = null;
 
@@ -494,7 +503,6 @@
 		restoreSettings();
 		restoreEntries();
 		storageReady = true;
-		startCamera();
 
 		scanTimer = window.setInterval(scanFrame, 500);
 
@@ -545,6 +553,11 @@
 			<button onclick={() => (showSettings = !showSettings)}> Settings </button>
 
 			<button onclick={clearEntries}>Clear list</button>
+			<button
+				onclick={() => {
+					window.location.reload();
+				}}>Reload</button
+			>
 		</div>
 	</div>
 
